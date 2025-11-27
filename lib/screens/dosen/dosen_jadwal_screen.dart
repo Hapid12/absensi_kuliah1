@@ -5,7 +5,7 @@ import '../../services/jadwal_service.dart';
 
 class DosenJadwalScreen extends StatelessWidget {
   final String nip;
-  const DosenJadwalScreen({Key? key, required this.nip}) : super(key: key);
+  const DosenJadwalScreen({super.key, required this.nip});
 
   @override
   Widget build(BuildContext context) {

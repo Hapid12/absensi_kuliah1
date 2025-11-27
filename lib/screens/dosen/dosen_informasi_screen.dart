@@ -7,7 +7,7 @@ import '../../utils/colors.dart';
 
 class DosenInformasiScreen extends StatefulWidget {
   final String nip;
-  const DosenInformasiScreen({Key? key, required this.nip}) : super(key: key);
+  const DosenInformasiScreen({super.key, required this.nip});
 
   @override
   State<DosenInformasiScreen> createState() => _DosenInformasiScreenState();

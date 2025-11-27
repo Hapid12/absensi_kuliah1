@@ -8,22 +8,47 @@ import 'mahasiswa_jadwal_screen.dart';
 class MahasiswaDashboard extends StatelessWidget {
   final String name;
   final String npm;
-  const MahasiswaDashboard({Key? key, required this.name, required this.npm}) : super(key: key);
+  // Optional fields to show Fakultas & Prodi without breaking existing callers
+  final String fakultas;
+  final String prodi;
+
+  const MahasiswaDashboard({
+    super.key,
+    required this.name,
+    required this.npm,
+    this.fakultas = '',
+    this.prodi = '',
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Row(children: const [Icon(Icons.person), SizedBox(width: 8), Text('Mahasiswa')]),
+        title: Row(
+          children: const [
+            Icon(Icons.person),
+            SizedBox(width: 8),
+            Text('Mahasiswa'),
+          ],
+        ),
         backgroundColor: AppColors.primary,
         actions: [
           PopupMenuButton(
             icon: const Icon(Icons.more_vert),
             itemBuilder: (ctx) => [
-              PopupMenuItem(child: ListTile(leading: const Icon(Icons.logout), title: const Text('Logout'), onTap: () {
-                Navigator.pop(ctx);
-                Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
-              })),
+              PopupMenuItem(
+                child: ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Logout'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         ],
@@ -32,66 +57,193 @@ class MahasiswaDashboard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Halo, $name, apa kabar, $name', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text('NPM: $npm', style: TextStyle(color: Colors.grey[600])),
-              const SizedBox(height: 12),
-              Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(children: const [
-                    Row(children: [Icon(Icons.notifications_active), SizedBox(width: 8), Text('Notifikasi')]),
-                    SizedBox(height: 8),
-                    Text('Jadwal Kuliah diubah, materi akan dikirim melalui e-learning')
-                  ]),
-                ),
-              ),
-            ]),
-          ),
-          Expanded(
-            child: GridView.count(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildMenuCard(context, 'Absensi', Icons.check_circle, AppColors.secondary, () => Navigator.push(context, MaterialPageRoute(builder: (_) => MahasiswaAbsensiScreen(npm: npm)))),
-                _buildMenuCard(context, 'Jadwal', Icons.calendar_today, AppColors.success, () => Navigator.push(context, MaterialPageRoute(builder: (_) => MahasiswaJadwalScreen(npm: npm)))),
-                _buildMenuCard(context, 'Informasi', Icons.info, AppColors.warning, () => Navigator.push(context, MaterialPageRoute(builder: (_) => MahasiswaInformasiScreen(npm: npm)))),
+                // Card with profile and basic info (centered)
+                Center(
+                  child: Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Avatar + Upload button
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 44,
+                                backgroundColor: Colors.grey[200],
+                                child: const Icon(
+                                  Icons.person,
+                                  size: 44,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 36,
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(color: AppColors.primary),
+                                  ),
+                                  onPressed: () {
+                                    // TODO: Implement image picker/upload
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Upload photo tapped'),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.upload_file, size: 18),
+                                  label: const Text('Upload Foto'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(width: 16),
+                          // Info texts
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'MAHASISWA',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Nama : $name',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'NPM : $npm',
+                                  style: TextStyle(color: Colors.grey[700]),
+                                ),
+                                if (fakultas.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Fakultas : $fakultas',
+                                    style: TextStyle(color: Colors.grey[700]),
+                                  ),
+                                ],
+                                if (prodi.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Prodi : $prodi',
+                                    style: TextStyle(color: Colors.grey[700]),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Notification card
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      children: const [
+                        Row(
+                          children: [
+                            Icon(Icons.notifications_active),
+                            SizedBox(width: 8),
+                            Text('Notifikasi'),
+                          ],
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Jadwal Kuliah diubah, materi akan dikirim melalui e-learning',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          Container(
-            height: 70,
-            decoration: const BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: const [Icon(Icons.home, color: Colors.white), Icon(Icons.note, color: Colors.white), Icon(Icons.calendar_today, color: Colors.white), Icon(Icons.person, color: Colors.white)]),
-          )
+          // Expandable spacer so content is centered above bottom icons
+          const Expanded(child: SizedBox.shrink()),
         ],
+      ),
+      // Icon-only bottom bar
+      bottomNavigationBar: Container(
+        height: 72,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 6,
+              offset: Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            IconButton(
+              tooltip: 'Absensi',
+              iconSize: 30,
+              color: AppColors.secondary,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MahasiswaAbsensiScreen(npm: npm),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.check_circle),
+            ),
+            IconButton(
+              tooltip: 'Jadwal',
+              iconSize: 30,
+              color: AppColors.success,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MahasiswaJadwalScreen(npm: npm),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.calendar_today),
+            ),
+            IconButton(
+              tooltip: 'Informasi',
+              iconSize: 30,
+              color: AppColors.warning,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MahasiswaInformasiScreen(npm: npm),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.info),
+            ),
+          ],
+        ),
       ),
     );
   }
-}
-
-Widget _buildMenuCard(
-  BuildContext context,
-  String title,
-  IconData icon,
-  Color color,
-  VoidCallback onTap,
-) {
-  return Card(
-    elevation: 4,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, size: 48, color: color), const SizedBox(height: 12), Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))]),
-      ),
-    ),
-  );
 }

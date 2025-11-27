@@ -3,11 +3,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../data/dummy_data.dart';
-import '../models/mahasiswa_model.dart';
-import '../models/dosen_model.dart';
 import '../models/jadwal_model.dart';
-import '../models/user_model.dart';
-import '../models/announcement_model.dart';
 
 class DBHelper {
 

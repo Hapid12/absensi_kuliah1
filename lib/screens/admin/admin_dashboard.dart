@@ -9,7 +9,7 @@ import '../auth/login_screen.dart';
 import '../../services/auth_service.dart';
 
 class AdminDashboard extends StatefulWidget {
-  const AdminDashboard({Key? key}) : super(key: key);
+  const AdminDashboard({super.key});
 
   @override
   State<AdminDashboard> createState() => _AdminDashboardState();

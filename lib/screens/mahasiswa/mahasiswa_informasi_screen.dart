@@ -5,7 +5,7 @@ import '../../services/db_helper.dart';
 
 class MahasiswaInformasiScreen extends StatefulWidget {
   final String npm;
-  const MahasiswaInformasiScreen({Key? key, required this.npm}) : super(key: key);
+  const MahasiswaInformasiScreen({super.key, required this.npm});
 
   @override
   State<MahasiswaInformasiScreen> createState() => _MahasiswaInformasiScreenState();

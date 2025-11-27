@@ -5,7 +5,7 @@ import '../../services/db_helper.dart';
 import '../../utils/colors.dart';
 
 class ManageDosenScreen extends StatefulWidget {
-  const ManageDosenScreen({Key? key}) : super(key: key);
+  const ManageDosenScreen({super.key});
 
   @override
   State<ManageDosenScreen> createState() => _ManageDosenScreenState();

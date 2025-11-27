@@ -9,8 +9,7 @@ import 'dosen_informasi_screen.dart';
 class DosenDashboard extends StatelessWidget {
   final String name;
   final String nip;
-  const DosenDashboard({Key? key, required this.name, required this.nip})
-      : super(key: key);
+  const DosenDashboard({super.key, required this.name, required this.nip});
 
   @override
   Widget build(BuildContext context) {
