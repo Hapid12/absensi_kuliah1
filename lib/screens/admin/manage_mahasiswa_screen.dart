@@ -27,7 +27,7 @@ class _ManageMahasiswaScreenState extends State<ManageMahasiswaScreen> {
     final list = rows.map((m) => Mahasiswa(
       npm: m['npm'] as String,
       nama: m['nama'] as String,
-      prodi: m['prodi'] as String,
+      prodi: m['prodi'] as String, id: '', status: '',
     )).toList();
     setState(() {
       mahasiswaList = list;
@@ -117,7 +117,7 @@ class _ManageMahasiswaScreenState extends State<ManageMahasiswaScreen> {
                 final newMhs = Mahasiswa(
                   npm: npmController.text,
                   nama: namaController.text,
-                  prodi: prodiController.text,
+                  prodi: prodiController.text, id: '', status: '',
                 );
                 await DBHelper.instance.insertMahasiswa({
                   'npm': newMhs.npm,
@@ -214,7 +214,7 @@ class _ManageMahasiswaScreenState extends State<ManageMahasiswaScreen> {
               final updated = Mahasiswa(
                 npm: npmController.text,
                 nama: namaController.text,
-                prodi: prodiController.text,
+                prodi: prodiController.text, id: '', status: '',
               );
               await DBHelper.instance.updateMahasiswa(mhs.npm, {
                 'npm': updated.npm,

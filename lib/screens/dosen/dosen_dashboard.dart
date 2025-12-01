@@ -1,15 +1,89 @@
 // lib/screens/dosen/dosen_dashboard.dart
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../../utils/colors.dart';
 import '../auth/login_screen.dart';
 import 'dosen_absensi_screen.dart';
 import 'dosen_jadwal_screen.dart';
 import 'dosen_informasi_screen.dart';
+import '../../models/jadwal_model.dart'; // << tambahkan import ini
+import '../../services/jadwal_service.dart';
+import '../../services/db_helper.dart';
 
-class DosenDashboard extends StatelessWidget {
+class DosenDashboard extends StatefulWidget {
   final String name;
   final String nip;
   const DosenDashboard({super.key, required this.name, required this.nip});
+
+  @override
+  State<DosenDashboard> createState() => _DosenDashboardState();
+}
+
+class _DosenDashboardState extends State<DosenDashboard> {
+  List<Map<String, dynamic>> _announcements = [];
+  bool _loadingAnnouncements = true;
+  StreamSubscription<void>? _annSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAnnouncements();
+    // Listen to announcements stream and reload when changed
+    _annSub = DBHelper.instance.announcementsStream.listen((_) {
+      _loadAnnouncements();
+    });
+  }
+
+  @override
+  void dispose() {
+    _annSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadAnnouncements() async {
+    setState(() => _loadingAnnouncements = true);
+    try {
+      final all = await JadwalService.getAllJadwal();
+      final my = all.where((j) => j.dosenNip == widget.nip).toList();
+      final ids = my.map((j) => j.id).toList();
+      final rows = await DBHelper.instance.getAnnouncementsByJadwalIds(ids);
+      setState(() {
+        _announcements = rows;
+      });
+    } catch (e) {
+      setState(() {
+        _announcements = [];
+      });
+    } finally {
+      setState(() => _loadingAnnouncements = false);
+    }
+  }
+
+  Widget _buildAnnouncementsSection() {
+    if (_loadingAnnouncements)
+      return const Center(child: CircularProgressIndicator());
+    if (_announcements.isEmpty) return const Text('Belum ada notifikasi.');
+    return Column(
+      children: _announcements.map((a) {
+        final createdAt = a['createdAt'] as String? ?? '';
+        final mata = a['mataKuliah'] as String? ?? '';
+        final message = a['message'] as String? ?? '';
+        final subject = a['subject'] as String? ?? '';
+        return ListTile(
+          dense: true,
+          title: Text(
+            mata.isNotEmpty ? mata : subject,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(message),
+          trailing: Text(
+            createdAt.isNotEmpty ? createdAt.split('T').first : '',
+            style: const TextStyle(fontSize: 10),
+          ),
+        );
+      }).toList(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,24 +135,46 @@ class DosenDashboard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Selamat datang, $name', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text('NIP: $nip', style: TextStyle(color: Colors.grey[600])),
-              const SizedBox(height: 12),
-              Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(children: [
-                    Row(children: const [Icon(Icons.info_outline), SizedBox(width: 8), Text('Informasi')]),
-                    const SizedBox(height: 8),
-                    const Text('Sistem belum mengalami update')
-                  ]),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Selamat datang, ${widget.name}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-            ]),
+                const SizedBox(height: 6),
+                Text(
+                  'NIP: ${widget.nip}',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: const [
+                            Icon(Icons.info_outline),
+                            SizedBox(width: 8),
+                            Text('Informasi'),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _buildAnnouncementsSection(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           Expanded(
             child: GridView.count(
@@ -87,19 +183,83 @@ class DosenDashboard extends StatelessWidget {
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
               children: [
-                _buildMenuCard(context, 'Absensi', Icons.check_circle, AppColors.secondary, () => Navigator.push(context, MaterialPageRoute(builder: (_) => DosenAbsensiScreen(nip: nip)))),
-                _buildMenuCard(context, 'Jadwal', Icons.calendar_today, AppColors.success, () => Navigator.push(context, MaterialPageRoute(builder: (_) => DosenJadwalScreen(nip: nip)))),
-                _buildMenuCard(context, 'Informasi', Icons.info, AppColors.warning, () => Navigator.push(context, MaterialPageRoute(builder: (_) => DosenInformasiScreen(nip: nip)))),
-                _buildMenuCard(context, 'Nilai', Icons.grade, Colors.purple, () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fitur Nilai akan segera hadir')))),
+                _buildMenuCard(
+                  context,
+                  'Absensi',
+                  Icons.check_circle,
+                  AppColors.secondary,
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DosenAbsensiScreen(
+                        jadwal: Jadwal(
+                          id: 'A', // ganti dengan id/jadwal nyata
+                          mataKuliah: 'Nama MK',
+                          ruang: 'E.0302',
+                          hari: '',
+                          jam: '',
+                          dosenNip: '',
+                        ),
+                        sudahAbsenDosen: false,
+                      ),
+                    ),
+                  ),
+                ),
+                _buildMenuCard(
+                  context,
+                  'Jadwal',
+                  Icons.calendar_today,
+                  AppColors.success,
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DosenJadwalScreen(nip: widget.nip),
+                    ),
+                  ),
+                ),
+                _buildMenuCard(
+                  context,
+                  'Informasi',
+                  Icons.info,
+                  AppColors.warning,
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DosenInformasiScreen(nip: widget.nip),
+                    ),
+                  ),
+                ),
+                _buildMenuCard(
+                  context,
+                  'Nilai',
+                  Icons.grade,
+                  Colors.purple,
+                  () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Fitur Nilai akan segera hadir'),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
           // bottom nav / decorative footer
           Container(
             height: 70,
-            decoration: const BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: const [Icon(Icons.home, color: Colors.white), Icon(Icons.note, color: Colors.white), Icon(Icons.calendar_today, color: Colors.white), Icon(Icons.person, color: Colors.white)]),
-          )
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: const [
+                Icon(Icons.home, color: Colors.white),
+                Icon(Icons.note, color: Colors.white),
+                Icon(Icons.calendar_today, color: Colors.white),
+                Icon(Icons.person, color: Colors.white),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -114,9 +274,7 @@ class DosenDashboard extends StatelessWidget {
   ) {
     return Card(
       elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),

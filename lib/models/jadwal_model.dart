@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Jadwal {
   final String id;
   final String mataKuliah;
@@ -25,20 +27,33 @@ class Jadwal {
     if (pesertaField == null) {
       pesertaList = [];
     } else if (pesertaField is String) {
-      // support comma separated string like "2301,2302"
-      pesertaList = pesertaField
-          .split(',')
+  final text = pesertaField.trim();
+
+  // Jika format JSON array: ["2301","2302"]
+  if (text.startsWith('[') && text.endsWith(']')) {
+    try {
+      final List decoded = jsonDecode(text);
+      pesertaList = decoded
           .map((e) => e.toString().trim())
           .where((e) => e.isNotEmpty)
           .toList();
-    } else if (pesertaField is List) {
-      pesertaList = pesertaField
-          .map((e) => e?.toString().trim() ?? '')
+    } catch (e) {
+      // fallback ke CSV biasa
+      pesertaList = text
+          .split(',')
+          .map((e) => e.toString().replaceAll('"', '').trim())
           .where((e) => e.isNotEmpty)
           .toList();
-    } else {
-      pesertaList = [pesertaField.toString().trim()];
     }
+  } else {
+    // CSV normal
+    pesertaList = text
+        .split(',')
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+}
 
     return Jadwal(
       id: map['id']?.toString() ?? '',

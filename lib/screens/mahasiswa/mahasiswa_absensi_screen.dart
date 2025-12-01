@@ -228,7 +228,7 @@ class _MahasiswaAbsensiScreenState extends State<MahasiswaAbsensiScreen> {
                                         CrossAxisAlignment.center,
                                     children: [
                                       Text(
-                                        '${j.mataKuliah}',
+                                        j.mataKuliah,
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.bold,

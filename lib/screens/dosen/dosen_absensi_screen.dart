@@ -1,404 +1,346 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
-import '../../services/jadwal_service.dart';
-import '../../services/dosen_service.dart';
-import '../../services/db_helper.dart';
-import '../../models/jadwal_model.dart';
 import '../../utils/colors.dart';
+import '../../models/jadwal_model.dart';
+import '../../screens/dosen/dosen_kelola_absensi_screen.dart';
+import '../../services/dosen_service.dart';
 
-// Layar Absensi Dosen: menampilkan daftar jadwal dosen yang login,
-// menghitung kehadiran mahasiswa, memungkinkan dosen menandai dirinya hadir,
-// dan mengelola (toggle) kehadiran mahasiswa per jadwal.
+class DosenAbsensiScreen extends StatelessWidget {
+  final Jadwal jadwal;
+  final bool sudahAbsenDosen;
 
-class DosenAbsensiScreen extends StatefulWidget {
-  final String nip;
-  const DosenAbsensiScreen({super.key, required this.nip});
-
-  @override
-  State<DosenAbsensiScreen> createState() => _DosenAbsensiScreenState();
-}
-
-class _DosenAbsensiScreenState extends State<DosenAbsensiScreen> {
-  List<Jadwal> jadwals = [];
-  final Map<String, Set<String>> attendanceMap = {}; // jadwalId -> set of npm
-  final Map<String, bool> dosenPresentMap = {}; // jadwalId -> isDosenPresent
-  final Map<String, String> mahasiswaNames = {}; // npm -> name
-  bool isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => isLoading = true);
-    try {
-      final list = await JadwalService.getJadwalByDosen(widget.nip);
-      // preload mahasiswa names
-      final rows = await DBHelper.instance.getAllMahasiswa();
-      mahasiswaNames.clear();
-      for (final r in rows) {
-        mahasiswaNames[r['npm'] as String] = r['nama'] as String;
-      }
-
-      for (final j in list) {
-        try {
-          final att = await DosenService.getAttendance(j.id);
-          attendanceMap[j.id] = Set<String>.from(att);
-        } catch (_) {
-          attendanceMap[j.id] = <String>{};
-        }
-        try {
-          final dPresent = await DosenService.isDosenPresent(j.id, widget.nip);
-          dosenPresentMap[j.id] = dPresent;
-        } catch (_) {
-          dosenPresentMap[j.id] = false;
-        }
-      }
-
-      setState(() {
-        jadwals = list;
-      });
-    } catch (e) {
-      // jika error, tetap set loading false dan jadwals tetap kosong
-    } finally {
-      setState(() => isLoading = false);
-    }
-  }
-
-  // helper to mark student present (use existing toggleAttendance)
-  Future<void> _markStudentPresent(String jadwalId, String npm) async {
-    try {
-      final current = attendanceMap[jadwalId] ?? <String>{};
-      if (!current.contains(npm)) {
-        await DosenService.toggleAttendance(jadwalId, npm);
-        final att = await DosenService.getAttendance(jadwalId);
-        setState(() {
-          attendanceMap[jadwalId] = Set<String>.from(att);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Berhasil menandai hadir: $npm')),
-        );
-      } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Mahasiswa sudah hadir: $npm')));
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal menandai hadir: $npm')));
-    }
-  }
-
-  // helper to reject student presence (remove hadir if exists)
-  Future<void> _rejectStudentAttendance(String jadwalId, String npm) async {
-    try {
-      final current = attendanceMap[jadwalId] ?? <String>{};
-      if (current.contains(npm)) {
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Konfirmasi Tolak'),
-            content: Text('Anda yakin ingin menolak absensi $npm?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Batal'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Tolak'),
-              ),
-            ],
-          ),
-        );
-        if (confirmed != true) return;
-        await DosenService.toggleAttendance(jadwalId, npm);
-        final att = await DosenService.getAttendance(jadwalId);
-        setState(() {
-          attendanceMap[jadwalId] = Set<String>.from(att);
-        });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Absensi $npm ditolak.')));
-      } else {
-        // jika belum hadir, 'tolak' hanya menampilkan info; untuk memblokir absen,
-        // butuh API tambahan di backend (contoh: DosenService.rejectAttendance).
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Mahasiswa $npm belum absen. Gunakan fitur blokir jika tersedia.',
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal tolak absensi: $npm')));
-    }
-  }
-
-  // helper to force refresh attendance for a particular jadwal
-  Future<void> _refreshAttendanceForJadwal(String jadwalId) async {
-    try {
-      final att = await DosenService.getAttendance(jadwalId);
-      setState(() {
-        attendanceMap[jadwalId] = Set<String>.from(att);
-      });
-    } catch (_) {
-      // ignore for now
-    }
-  }
-
-  // tambahkan dialog pengumuman sederhana
-  Future<void> _showAnnouncementDialog(Jadwal j) async {
-    final controller = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Pengumuman: ${j.mataKuliah}'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                maxLines: 5,
-                decoration: const InputDecoration(
-                  hintText: 'Tulis pengumuman di sini...',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Kirim'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && controller.text.trim().isNotEmpty) {
-      // panggil service jika ada backend; contoh di sini hanya snackbar
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Pengumuman dikirim.')));
-    }
-  }
-
-  void _openAttendanceEditor(BuildContext ctx, Jadwal j) {
-    final pesertaNpms = j.peserta;
-    showDialog(
-      context: ctx,
-      builder: (ctx2) => AlertDialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(child: Text('Absensi: ${j.mataKuliah}')),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FutureBuilder(
-                  future: DosenService.getAttendance(j.id),
-                  builder: (context, snapshot) {
-                    final presentCount = snapshot.hasData
-                        ? (snapshot.data as List).length
-                        : (attendanceMap[j.id]?.length ?? 0);
-                    final total = j.peserta.length;
-                    return Text(
-                      'Hadir: $presentCount/$total',
-                      style: const TextStyle(fontSize: 12),
-                    );
-                  },
-                ),
-                const SizedBox(width: 6),
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: () => _refreshAttendanceForJadwal(j.id),
-                  icon: const Icon(Icons.refresh, size: 20),
-                ),
-              ],
-            ),
-          ],
-        ),
-        content: LayoutBuilder(
-          builder: (context, constraints) {
-            final maxHeight = min(
-              MediaQuery.of(context).size.height * 0.75,
-              600.0,
-            );
-            return SizedBox(
-              width: double.maxFinite,
-              height: maxHeight,
-              child: Scrollbar(
-                thumbVisibility: true,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: pesertaNpms.length,
-                  itemBuilder: (context, index) {
-                    final npm = pesertaNpms[index];
-                    final mName = mahasiswaNames[npm] ?? npm;
-                    final present = attendanceMap[j.id]?.contains(npm) ?? false;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: Card(
-                        elevation: 1,
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            child: Text(mName.isNotEmpty ? mName[0] : '?'),
-                          ),
-                          title: Text('$mName ($npm)'),
-                          subtitle: Text(
-                            present ? 'Status: Hadir' : 'Status: Belum absen',
-                          ),
-                          trailing: Wrap(
-                            spacing: 6,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              ElevatedButton.icon(
-                                onPressed: present
-                                    ? null
-                                    : () => _markStudentPresent(j.id, npm),
-                                icon: const Icon(Icons.check, size: 16),
-                                label: const Text('Absen'),
-                                style: ElevatedButton.styleFrom(
-                                  minimumSize: const Size(72, 36),
-                                  textStyle: const TextStyle(fontSize: 13),
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () =>
-                                    _rejectStudentAttendance(j.id, npm),
-                                icon: const Icon(
-                                  Icons.close,
-                                  size: 16,
-                                  color: Colors.red,
-                                ),
-                                label: const Text('Tolak'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.red,
-                                  minimumSize: const Size(72, 36),
-                                  textStyle: const TextStyle(fontSize: 13),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx2),
-            child: const Text('Tutup'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _toggleDosenPresence(Jadwal j) async {
-    try {
-      await DosenService.toggleDosenPresence(j.id, widget.nip);
-      final now = await DosenService.isDosenPresent(j.id, widget.nip);
-      setState(() {
-        dosenPresentMap[j.id] = now;
-      });
-    } catch (e) {
-      // handle error if needed
-    }
-  }
+  const DosenAbsensiScreen({
+    super.key,
+    required this.jadwal,
+    required this.sudahAbsenDosen,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Absensi Dosen'),
         backgroundColor: AppColors.primary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-            tooltip: 'Refresh',
-          ),
-        ],
+        title: const Text("Absensi Kehadiran"),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : jadwals.isEmpty
-          ? const Center(child: Text('Belum ada jadwal terkait.'))
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: jadwals.length,
-                itemBuilder: (context, index) {
-                  final j = jadwals[index];
-                  final presentCount = attendanceMap[j.id]?.length ?? 0;
-                  final dosenPresent = dosenPresentMap[j.id] ?? false;
-                  return Card(
-                    margin: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    elevation: 2,
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      title: Text('${j.mataKuliah} — ${j.hari} ${j.jam}'),
-                      subtitle: Text('Ruang ${j.ruang} • Hadir: $presentCount'),
-                      trailing: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        child: Wrap(
-                          spacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          alignment: WrapAlignment.end,
-                          children: [
-                            TextButton(
-                              onPressed: () =>
-                                  _openAttendanceEditor(context, j),
-                              child: const Text('Kelola'),
-                            ),
-                            OutlinedButton(
-                              onPressed: () => _showAnnouncementDialog(j),
-                              child: const Text('Pengumuman'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => _toggleDosenPresence(j),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: dosenPresent
-                                    ? Colors.green[600]
-                                    : AppColors.primary,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size(72, 36),
-                              ),
-                              child: const Text('Absen'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
+
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // =========================
+            //     HEADER MATA KULIAH (mirip gambar)
+            // =========================
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF3B1E6A), // ungu gelap
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blueAccent.shade100, width: 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 6,
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    "ABSENSI KELAS ${jadwal.id}",
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    "KODE MK - ${jadwal.mataKuliah}",
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    "PERTEMUAN KE-1 | SKS MENGAJAR 2",
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
               ),
             ),
+
+            const SizedBox(height: 20),
+
+            // =========================
+            //         INFO ABSEN (latar ungu muda)
+            // =========================
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xffefe6ff), // ungu muda
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "INFO ABSENSI",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    sudahAbsenDosen ? "Anda sudah absen" : "Anda belum absen",
+                    style: const TextStyle(fontSize: 13),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // =========================
+                  //         TABEL (simple)
+                  // =========================
+                  Table(
+                    border: TableBorder.all(color: Colors.black45, width: 1),
+                    defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                    children: [
+                      TableRow(
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple.shade100,
+                        ),
+                        children: const [
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text(
+                              "Kelas",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text(
+                              "Gedung",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text(
+                              "Ruang",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text(
+                              "Jam Mulai",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Text(
+                              "Jam Berakhir",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      TableRow(
+                        children: [
+                          tableCell(jadwal.id),
+                          tableCell("Gedung Mipa"),
+                          tableCell(jadwal.ruang),
+                          tableCell("20-10-2025 10:45"),
+                          tableCell("20-10-2025 11:55"),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // =========================
+                  //         TOMBOL
+                  // =========================
+                  Row(
+                    children: [
+                      // KELOLA ABSEN (mengganti Edit Absen)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            // buka layar kelola absen
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => DosenKelolaAbsensiScreen(
+                                  jadwalId: jadwal.id,
+                                ),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.yellow,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text("Kelola Absen"),
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      // PENGUMUMAN -> popup untuk menulis pengumuman
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (ctx) {
+                                final TextEditingController ctrl =
+                                    TextEditingController();
+                                bool sending = false;
+                                return StatefulBuilder(
+                                  builder: (c, setState) => AlertDialog(
+                                    title: const Text("Kirim Pengumuman"),
+                                    content: TextField(
+                                      controller: ctrl,
+                                      maxLines: 5,
+                                      decoration: const InputDecoration(
+                                        hintText:
+                                            "Tulis pengumuman untuk mahasiswa...",
+                                      ),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: sending
+                                            ? null
+                                            : () => Navigator.pop(ctx),
+                                        child: const Text("Batal"),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: sending
+                                            ? null
+                                            : () async {
+                                                final text = ctrl.text.trim();
+                                                if (text.isEmpty) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        "Isi pengumuman terlebih dahulu",
+                                                      ),
+                                                    ),
+                                                  );
+                                                  return;
+                                                }
+                                                setState(() {
+                                                  sending = true;
+                                                });
+                                                // Store announcement (persist) using service
+                                                await DosenService.postAnnouncement(
+                                                  jadwal.id,
+                                                  jadwal.mataKuliah,
+                                                  text,
+                                                  subject: '',
+                                                );
+                                                setState(() {
+                                                  sending = false;
+                                                });
+                                                Navigator.pop(ctx);
+                                                // show success dialog
+                                                await showDialog(
+                                                  context: context,
+                                                  builder: (ctx2) => AlertDialog(
+                                                    title: const Text(
+                                                      'Berhasil',
+                                                    ),
+                                                    content: const Text(
+                                                      'Pengumuman berhasil dikirim.',
+                                                    ),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () =>
+                                                            Navigator.pop(ctx2),
+                                                        child: const Text('OK'),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      "Pengumuman terkirim",
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                        child: sending
+                                            ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Text("Kirim"),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text("Pengumuman"),
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      // ABSEN (tidak diubah)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {},
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text("Absen"),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget tableCell(String text) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 12),
+      ),
     );
   }
 }

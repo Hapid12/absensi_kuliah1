@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../../utils/colors.dart';
 import '../auth/login_screen.dart';
 import 'mahasiswa_absensi_screen.dart';
 import 'mahasiswa_informasi_screen.dart';
 import 'mahasiswa_jadwal_screen.dart';
+import '../../services/db_helper.dart';
+import '../../services/jadwal_service.dart';
 
-class MahasiswaDashboard extends StatelessWidget {
+class MahasiswaDashboard extends StatefulWidget {
   final String name;
   final String npm;
   // Optional fields to show Fakultas & Prodi without breaking existing callers
@@ -19,6 +22,57 @@ class MahasiswaDashboard extends StatelessWidget {
     this.fakultas = '',
     this.prodi = '',
   });
+
+  @override
+  State<MahasiswaDashboard> createState() => _MahasiswaDashboardState();
+}
+
+class _MahasiswaDashboardState extends State<MahasiswaDashboard> {
+  List<Map<String, dynamic>> _announcements = [];
+  bool _loadingAnnouncements = true;
+  StreamSubscription<void>? _annSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAnnouncements();
+    _annSub = DBHelper.instance.announcementsStream.listen((_) {
+      _loadAnnouncements();
+    });
+  }
+
+  @override
+  void dispose() {
+    _annSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadAnnouncements() async {
+    setState(() {
+      _loadingAnnouncements = true;
+    });
+    try {
+      // Get all jadwals and filter to those that include this npm
+      final all = await JadwalService.getAllJadwal();
+      final myJadwals = all
+          .where((j) => j.peserta.contains(widget.npm))
+          .toList();
+      final ids = myJadwals.map((j) => j.id).toList();
+      final rows = await DBHelper.instance.getAnnouncementsByJadwalIds(ids);
+      setState(() {
+        _announcements = rows;
+      });
+    } catch (e) {
+      // ignore or log
+      setState(() {
+        _announcements = [];
+      });
+    } finally {
+      setState(() {
+        _loadingAnnouncements = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -118,27 +172,27 @@ class MahasiswaDashboard extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Nama : $name',
+                                  'Nama : ${widget.name}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'NPM : $npm',
+                                  'NPM : ${widget.npm}',
                                   style: TextStyle(color: Colors.grey[700]),
                                 ),
-                                if (fakultas.isNotEmpty) ...[
+                                if (widget.fakultas.isNotEmpty) ...[
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Fakultas : $fakultas',
+                                    'Fakultas : ${widget.fakultas}',
                                     style: TextStyle(color: Colors.grey[700]),
                                   ),
                                 ],
-                                if (prodi.isNotEmpty) ...[
+                                if (widget.prodi.isNotEmpty) ...[
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Prodi : $prodi',
+                                    'Prodi : ${widget.prodi}',
                                     style: TextStyle(color: Colors.grey[700]),
                                   ),
                                 ],
@@ -160,18 +214,16 @@ class MahasiswaDashboard extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.all(12.0),
                     child: Column(
-                      children: const [
+                      children: [
                         Row(
-                          children: [
+                          children: const [
                             Icon(Icons.notifications_active),
                             SizedBox(width: 8),
                             Text('Notifikasi'),
                           ],
                         ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Jadwal Kuliah diubah, materi akan dikirim melalui e-learning',
-                        ),
+                        const SizedBox(height: 8),
+                        _buildAnnouncementsSection(),
                       ],
                     ),
                   ),
@@ -207,7 +259,7 @@ class MahasiswaDashboard extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => MahasiswaAbsensiScreen(npm: npm),
+                    builder: (_) => MahasiswaAbsensiScreen(npm: widget.npm),
                   ),
                 );
               },
@@ -221,7 +273,7 @@ class MahasiswaDashboard extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => MahasiswaJadwalScreen(npm: npm),
+                    builder: (_) => MahasiswaJadwalScreen(npm: widget.npm),
                   ),
                 );
               },
@@ -235,7 +287,7 @@ class MahasiswaDashboard extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => MahasiswaInformasiScreen(npm: npm),
+                    builder: (_) => MahasiswaInformasiScreen(npm: widget.npm),
                   ),
                 );
               },
@@ -244,6 +296,34 @@ class MahasiswaDashboard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAnnouncementsSection() {
+    if (_loadingAnnouncements) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_announcements.isEmpty) {
+      return const Text('Belum ada notifikasi.');
+    }
+    return Column(
+      children: _announcements.map((a) {
+        final createdAt = a['createdAt'] as String? ?? '';
+        final mata = a['mataKuliah'] as String? ?? '';
+        final message = a['message'] as String? ?? '';
+        return ListTile(
+          dense: true,
+          title: Text(
+            mata,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(message),
+          trailing: Text(
+            createdAt.isNotEmpty ? createdAt.split('T').first : '',
+            style: const TextStyle(fontSize: 10),
+          ),
+        );
+      }).toList(),
     );
   }
 }

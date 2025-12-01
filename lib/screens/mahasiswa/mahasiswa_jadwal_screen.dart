@@ -1,3 +1,4 @@
+// lib/screens/mahasiswa/mahasiswa_jadwal_screen.dart
 import 'package:flutter/material.dart';
 import '../../services/jadwal_service.dart';
 import '../../models/jadwal_model.dart';
@@ -12,8 +13,21 @@ class MahasiswaJadwalScreen extends StatefulWidget {
 }
 
 class _MahasiswaJadwalScreenState extends State<MahasiswaJadwalScreen> {
-  List<Jadwal> jadwals = [];
-  String _filter = '';
+  List<Jadwal> _all = [];
+  List<Jadwal> _visible = [];
+  String _search = '';
+  int _selectedDay = 0; // 0 = Semua, 1 = Senin, ... 6 = Sabtu
+  bool _loading = true;
+
+  final List<String> _days = [
+    'Semua Hari',
+    'Senin',
+    'Selasa',
+    'Rabu',
+    'Kamis',
+    "Jumat",
+    'Sabtu'
+  ];
 
   @override
   void initState() {
@@ -22,16 +36,69 @@ class _MahasiswaJadwalScreenState extends State<MahasiswaJadwalScreen> {
   }
 
   Future<void> _load() async {
-    final all = await JadwalService.getAllJadwal();
     setState(() {
-      jadwals = all.where((j) => j.peserta.contains(widget.npm)).toList();
+      _loading = true;
+    });
+
+    final all = await JadwalService.getAllJadwal();
+
+    // Normalisasi peserta tiap jadwal supaya perbandingan lebih aman
+    final normalized = all.map((j) {
+      final peserta = j.peserta
+          .map((e) => e.toString().replaceAll('"', '').trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      return Jadwal(
+        id: j.id,
+        mataKuliah: j.mataKuliah,
+        hari: j.hari,
+        jam: j.jam,
+        ruang: j.ruang,
+        dosenNip: j.dosenNip,
+        peserta: peserta,
+      );
+    }).toList();
+
+    // Filter hanya jadwal yang peserta-nya mengandung npm (safety: trim)
+    final npmTry = widget.npm.replaceAll('"', '').trim();
+    final own = normalized.where((j) {
+      return j.peserta.any((p) => p.replaceAll('"', '').trim() == npmTry);
+    }).toList();
+
+    setState(() {
+      _all = own;
+      _applyFilters();
+      _loading = false;
+    });
+  }
+
+  void _applyFilters() {
+    final q = _search.trim().toLowerCase();
+    final filtered = _all.where((j) {
+      final matchSearch =
+          q.isEmpty || j.mataKuliah.toLowerCase().contains(q) || j.id.toLowerCase().contains(q);
+      final dayMatch = _selectedDay == 0 ? true : _weekdayFromString(j.hari) == _selectedDay;
+      return matchSearch && dayMatch;
+    }).toList();
+
+    // sort by hari -> jam mulai
+    filtered.sort((a, b) {
+      final da = _weekdayFromString(a.hari);
+      final db = _weekdayFromString(b.hari);
+      if (da != db) return da - db;
+      final sa = _startMinutesFromJam(a.jam);
+      final sb = _startMinutesFromJam(b.jam);
+      return sa.compareTo(sb);
+    });
+
+    setState(() {
+      _visible = filtered;
     });
   }
 
   int _weekdayFromString(String hari) {
     final dt = DateTime.tryParse(hari);
     if (dt != null) return dt.weekday;
-
     final normalized = hari.trim().toLowerCase();
     final map = {
       'senin': 1,
@@ -57,7 +124,6 @@ class _MahasiswaJadwalScreenState extends State<MahasiswaJadwalScreen> {
     final parts = jamStr.split('-');
     if (parts.isEmpty) return 0;
     final left = parts[0].trim();
-
     final ampmReg = RegExp(r'^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$');
     final m24Reg = RegExp(r'^(\d{1,2}):(\d{2})$');
 
@@ -100,62 +166,123 @@ class _MahasiswaJadwalScreenState extends State<MahasiswaJadwalScreen> {
     }
   }
 
-  Map<int, List<Jadwal>> _groupedSorted() {
-    final filtered = jadwals.where((j) {
-      if (_filter.isEmpty) return true;
-      return j.mataKuliah.toLowerCase().contains(_filter.toLowerCase()) ||
-          j.id.toLowerCase().contains(_filter.toLowerCase());
-    }).toList();
-
-    filtered.sort((a, b) {
-      final da = _weekdayFromString(a.hari);
-      final db = _weekdayFromString(b.hari);
-      if (da != db) return da - db;
-      final sa = _startMinutesFromJam(a.jam);
-      final sb = _startMinutesFromJam(b.jam);
-      return sa.compareTo(sb);
+  void _prevDay() {
+    if (_selectedDay <= 0) return;
+    setState(() {
+      _selectedDay = (_selectedDay - 1).clamp(0, 6);
+      _applyFilters();
     });
-
-    final Map<int, List<Jadwal>> map = {};
-    for (final j in filtered) {
-      final wd = _weekdayFromString(j.hari);
-      map.putIfAbsent(wd, () => []).add(j);
-    }
-    return map;
   }
 
-  Widget _buildRightCell(Jadwal j) {
-    final pertemuan = '1';
-    final jamParts = j.jam.split('-').map((s) => s.trim()).toList();
-    final jamMulai = jamParts.isNotEmpty ? jamParts[0] : '-';
-    final jamSelesai = jamParts.length > 1 ? jamParts[1] : '-';
+  void _nextDay() {
+    if (_selectedDay >= 6) return;
+    setState(() {
+      _selectedDay = (_selectedDay + 1).clamp(0, 6);
+      _applyFilters();
+    });
+  }
 
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Pertemuan',
-              style: TextStyle(
-                  fontWeight: FontWeight.bold, color: Colors.grey[800])),
-          const SizedBox(height: 6),
-          Text(pertemuan, style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text('Nama Dosen: ${j.dosenNip}',
-              style: TextStyle(fontSize: 12, color: Colors.grey[700])),
-          const SizedBox(height: 4),
-          Text('Hari: ${j.hari}', style: const TextStyle(fontSize: 12)),
-          Text('Jam: $jamMulai - $jamSelesai',
-              style: const TextStyle(fontSize: 12)),
-          Text('Ruang: ${j.ruang}', style: const TextStyle(fontSize: 12)),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: () => _openDetailDialog(j),
-            icon: const Icon(Icons.info_outline, size: 16),
-            label: const Text('Detail'),
+  Widget _buildTable() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_visible.isEmpty) {
+      return const Center(child: Text('Belum ada jadwal untuk Anda.'));
+    }
+
+    // Gunakan ListView dengan card per-row agar lebih mirip gambar
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      itemCount: _visible.length,
+      itemBuilder: (context, index) {
+        final j = _visible[index];
+
+        final jamParts = j.jam.split('-').map((s) => s.trim()).toList();
+        final jamMulai = jamParts.isNotEmpty ? jamParts[0] : '-';
+        final jamSelesai = jamParts.length > 1 ? jamParts[1] : '-';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: const [
+              BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))
+            ],
           ),
-        ],
-      ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // KODE
+              Container(
+                width: 120,
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[100],
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(10),
+                    bottomLeft: Radius.circular(10),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Kode',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(j.id, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+
+              // MATA KULIAH
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        j.mataKuliah,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('(Kelas : A)', style: TextStyle(color: Colors.grey[700], fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ),
+
+              // DETAIL / PERTEMUAN
+              Container(
+                width: 240,
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Pertemuan', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    const Text('1', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text('Hari: ${j.hari}', style: const TextStyle(fontSize: 12)),
+                    Text('Jam: $jamMulai - $jamSelesai', style: const TextStyle(fontSize: 12)),
+                    Text('Ruang: ${j.ruang}', style: const TextStyle(fontSize: 12)),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _openDetailDialog(j),
+                      icon: const Icon(Icons.info_outline, size: 16),
+                      label: const Text('Detail'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -180,8 +307,7 @@ class _MahasiswaJadwalScreenState extends State<MahasiswaJadwalScreen> {
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Tutup'))
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Tutup'))
         ],
       ),
     );
@@ -189,163 +315,101 @@ class _MahasiswaJadwalScreenState extends State<MahasiswaJadwalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final grouped = _groupedSorted();
     final todayWd = DateTime.now().weekday;
 
     return Scaffold(
       appBar: AppBar(
-          title: const Text('Jadwal Kuliah'),
-          backgroundColor: AppColors.primary),
+        title: const Text('Jadwal Kuliah'),
+        backgroundColor: AppColors.primary,
+      ),
       body: Column(
         children: [
+          // Search + Controls
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Row(
               children: [
+                // Search
                 Expanded(
                   child: TextField(
-                    decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Cari kode atau mata kuliah...'),
-                    onChanged: (v) => setState(() => _filter = v),
+                    decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Cari mata kuliah atau kode...'),
+                    onChanged: (v) {
+                      setState(() {
+                        _search = v;
+                        _applyFilters();
+                      });
+                    },
                   ),
                 ),
+
+                const SizedBox(width: 8),
+
+                // Day dropdown
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: DropdownButton<int>(
+                    value: _selectedDay,
+                    underline: const SizedBox(),
+                    items: List.generate(_days.length, (i) => DropdownMenuItem(value: i, child: Text(_days[i]))),
+                    onChanged: (v) {
+                      setState(() {
+                        _selectedDay = v ?? 0;
+                        _applyFilters();
+                      });
+                    },
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // Prev / Next
+                IconButton(
+                  tooltip: 'Prev hari',
+                  onPressed: _prevDay,
+                  icon: const Icon(Icons.chevron_left),
+                ),
+                IconButton(
+                  tooltip: 'Next hari',
+                  onPressed: _nextDay,
+                  icon: const Icon(Icons.chevron_right),
+                ),
+
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: _load,
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
                   child: const Text('Refresh'),
-                )
+                ),
               ],
             ),
           ),
 
+          // Hari header kecil
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4),
+            child: Row(
+              children: [
+                Text(
+                  'Menampilkan: ${_selectedDay == 0 ? 'Semua Hari' : _dayNameFromWeekday(_selectedDay)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                if (_all.isNotEmpty)
+                  Text('Total jadwal: ${_visible.length} / ${_all.length}', style: const TextStyle(color: Colors.black54)),
+              ],
+            ),
+          ),
+
+          // Table / List
           Expanded(
-            child: grouped.isEmpty
-                ? const Center(child: Text('Belum ada jadwal untuk Anda.'))
-                : ListView(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    children: [
-                      for (int d = 1; d <= 6; d++)
-                        if (grouped.containsKey(d) &&
-                            (grouped[d]?.isNotEmpty ?? false))
-                          ...[
-                            // --- Header Hari ---
-                            Container(
-                              width: double.infinity,
-                              margin:
-                                  const EdgeInsets.only(bottom: 8, top: 8),
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 10, horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: d == todayWd
-                                    ? AppColors.success.withOpacity(0.95)
-                                    : AppColors.primary.withOpacity(0.9),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                _dayNameFromWeekday(d),
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            ),
-
-                            // --- List Jadwal ---
-                            for (final j in (grouped[d] ?? []))
-                              Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(10),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 6,
-                                        offset: Offset(0, 2))
-                                  ],
-                                ),
-                                child: Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    // KODE
-                                    Container(
-                                      width: 106,
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              vertical: 16, horizontal: 8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.blue[100],
-                                        borderRadius:
-                                            const BorderRadius.only(
-                                          topLeft: Radius.circular(10),
-                                          bottomLeft: Radius.circular(10),
-                                        ),
-                                      ),
-                                      child: const Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Kode',
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight:
-                                                    FontWeight.bold,
-                                                color: Colors.black54),
-                                          ),
-                                          SizedBox(height: 8),
-                                        ],
-                                      ),
-                                    ),
-
-                                    // MATA KULIAH
-                                    Expanded(
-                                      child: Container(
-                                        padding:
-                                            const EdgeInsets.symmetric(
-                                                vertical: 12,
-                                                horizontal: 12),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              j.mataKuliah,
-                                              style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight:
-                                                      FontWeight.bold),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              '(Kelas : A)',
-                                              style: TextStyle(
-                                                  color: Colors.grey[700],
-                                                  fontSize: 12),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-
-                                    // DETAIL KANAN
-                                    Container(
-                                      width: 220,
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              vertical: 8, horizontal: 12),
-                                      child: _buildRightCell(j),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ], // TANPA KOMA DI SINI
-                    ],
-                  ),
+            child: Container(
+              color: Colors.grey[100],
+              child: _buildTable(),
+            ),
           ),
         ],
       ),

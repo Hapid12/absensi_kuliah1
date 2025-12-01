@@ -6,9 +6,9 @@ import '../models/announcement_model.dart';
 
 class DummyData {
   static List<Mahasiswa> mahasiswaList = [
-    Mahasiswa(npm: '190001', nama: 'Ani Wijaya', prodi: 'Manajemen Informatika'),
-    Mahasiswa(npm: '190002', nama: 'Budi Santoso', prodi: 'Manajemen Informatika'),
-    Mahasiswa(npm: '190003', nama: 'Citra Lestari', prodi: 'Manajemen Informatika'),
+    Mahasiswa(npm: '190001', nama: 'Ani Wijaya', prodi: 'Manajemen Informatika', id: '', status: ''),
+    Mahasiswa(npm: '190002', nama: 'Budi Santoso', prodi: 'Manajemen Informatika', id: '', status: ''),
+    Mahasiswa(npm: '190003', nama: 'Citra Lestari', prodi: 'Manajemen Informatika', id: '', status: ''),
   ];
 
   static List<Dosen> dosenList = [
